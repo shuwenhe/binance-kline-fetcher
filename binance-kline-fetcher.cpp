@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <vector>
 #include <map>
@@ -56,7 +57,6 @@ std::string http_get_with_retry(const std::string& url, int max_retry = 3, int t
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
-        // Binance requires a User-Agent often to avoid 403s
         curl_easy_setopt(curl, CURLOPT_USERAGENT, "libcurl-agent/1.0");
 
         res = curl_easy_perform(curl);
@@ -64,7 +64,6 @@ std::string http_get_with_retry(const std::string& url, int max_retry = 3, int t
 
         attempt++;
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        std::cout << "Retry #" << attempt << " for " << url << " Error: " << curl_easy_strerror(res) << std::endl;
     }
 
     curl_easy_cleanup(curl);
@@ -76,16 +75,8 @@ std::string http_get_with_retry(const std::string& url, int max_retry = 3, int t
 class BinanceKLineFetcher {
 public:
     BinanceKLineFetcher() {
-        base_url = "https://api.binance.com/api/v3/klines"; // Updated to v3
-        freq_shifting = {
-            {"1m", 60 * 500},
-            {"5m", 300 * 500},
-            {"1h", 3600 * 500},
-            {"1d", 86400 * 500}
-        };
-        freq_map = {
-            {"1m", "1min"}, {"5m", "5min"}, {"1h", "60min"}, {"1d", "day"}
-        };
+        base_url = "https://api.binance.com/api/v3/klines";
+        freq_map = {{"1m", "1min"}, {"5m", "5min"}, {"1h", "60min"}, {"1d", "day"}};
     }
 
     std::vector<KLine> fetch_klines(const std::string& symbol, long long start_time, long long end_time,
@@ -109,10 +100,7 @@ public:
             if (callback) callback(klines);
             all_klines.insert(all_klines.end(), klines.begin(), klines.end());
 
-            // Move pointer forward based on the last timestamp received
             current_start = klines.back().time_stamp + 1;
-            
-            // Avoid hitting rate limits
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         return all_klines;
@@ -120,7 +108,6 @@ public:
 
 private:
     std::string base_url;
-    std::map<std::string, long long> freq_shifting;
     std::map<std::string, std::string> freq_map;
 
     std::vector<KLine> parse_klines(const std::string& symbol, const std::string& json_str, const std::string& freq) {
@@ -142,7 +129,7 @@ private:
 
                 std::time_t t = k.time_stamp;
                 char buf[20];
-                struct tm *timeinfo = std::gmtime(&t); // Using GMT for consistency
+                struct tm *timeinfo = std::gmtime(&t);
                 strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", timeinfo);
                 k.datetime = buf;
                 strftime(buf, sizeof(buf), "%Y-%m-%d", timeinfo);
@@ -159,17 +146,22 @@ private:
 // ---------------- ClickHouse Storage ----------------
 class ClickHouseStorage {
 public:
-    ClickHouseStorage(const std::string& host="localhost", const int port=9000, const std::string& db="default") {
+    ClickHouseStorage(const json& config) {
         ClientOptions options;
-        options.SetHost(host).SetPort(port).SetDefaultDatabase(db);
+        options.SetHost(config["host"])
+               .SetPort(9000)
+               .SetDefaultDatabase(config["database"])
+               .SetUser(config["user"])
+               .SetPassword(config["password"]);
+        
         client = std::make_unique<Client>(options);
+        table_name = config["table"];
     }
 
     void insert_klines(const std::vector<KLine>& klines) {
         if (klines.empty()) return;
 
         Block block;
-
         auto col_time_stamp = std::make_shared<ColumnInt64>();
         auto col_symbol     = std::make_shared<ColumnString>();
         auto col_open       = std::make_shared<ColumnFloat64>();
@@ -214,17 +206,27 @@ public:
         block.AppendColumn("date",       col_date);
         block.AppendColumn("date_stamp", col_date_stamp);
 
-        client->Insert("binance_kline", block);
+        client->Insert(table_name, block);
     }
 
 private:
     std::unique_ptr<Client> client;
+    std::string table_name;
 };
 
 // ---------------- Main ----------------
 int main() {
+    // 1. Load Config
+    std::ifstream f("config.json");
+    if (!f.is_open()) {
+        std::cerr << "Could not open config.json" << std::endl;
+        return 1;
+    }
+    json config = json::parse(f);
+
+    // 2. Setup Fetcher and Storage
     BinanceKLineFetcher fetcher;
-    ClickHouseStorage storage("127.0.0.1", 9000, "quant");
+    ClickHouseStorage storage(config["clickhouse"]);
 
     // Example range: Jan 1 2024 to Jan 2 2024
     long long start_time = 1704067200; 
@@ -232,11 +234,11 @@ int main() {
 
     fetcher.fetch_klines("ETHBTC", start_time, end_time, "1h",
         [&](const std::vector<KLine>& batch){
-            std::cout << "Fetched batch of " << batch.size() << " KLines, inserting..." << std::endl;
+            std::cout << "Inserting batch of " << batch.size() << " to " << config["clickhouse"]["table"] << std::endl;
             storage.insert_klines(batch);
         }
     );
 
-    std::cout << "Data collection complete." << std::endl;
+    std::cout << "Done." << std::endl;
     return 0;
 }

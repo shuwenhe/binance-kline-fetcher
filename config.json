@@ -1,0 +1,10 @@
+{
+  "clickhouse": {
+    "host": "127.0.0.1",
+    "database": "quant",
+    "user": "quant",
+    "password": "quant",
+    "table": "binance_trades_ticks"
+  }
+}
+

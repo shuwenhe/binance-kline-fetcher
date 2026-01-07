@@ -1,16 +1,17 @@
 CXX = g++
 CXXFLAGS = -std=c++17 -O2 -Wall
-# Added -llz4 and -lcityhash
-LIBS = -lcurl -lclickhouse-cpp-lib -lpthread -lzstd -llz4 -lcityhash
+# The order of libraries matters for the linker
+LIBS = -lclickhouse-cpp-lib -lcurl -lzstd -llz4 -lcityhash -lpthread
 
 TARGET = binance-kline-fetcher
-OBJS = binance-kline-fetcher.o
+SRC = binance-kline-fetcher.cpp
+OBJ = binance-kline-fetcher.o
 
-$(TARGET): $(OBJS)
-	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJS) $(LIBS)
+$(TARGET): $(OBJ)
+	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJ) $(LIBS)
 
-binance-kline-fetcher.o: binance-kline-fetcher.cpp
-	$(CXX) $(CXXFLAGS) -c binance-kline-fetcher.cpp -o binance-kline-fetcher.o
+$(OBJ): $(SRC)
+	$(CXX) $(CXXFLAGS) -c $(SRC) -o $(OBJ)
 
 clean:
-	rm -f $(TARGET) $(OBJS)
+	rm -f $(TARGET) $(OBJ)
