@@ -10,7 +10,6 @@
 #include <nlohmann/json.hpp>
 #include <functional>
 
-// ClickHouse Headers
 #include <clickhouse/client.h>
 #include <clickhouse/columns/numeric.h>
 #include <clickhouse/columns/string.h>
@@ -18,7 +17,6 @@
 using json = nlohmann::json;
 using namespace clickhouse;
 
-// ---------------- KLine Data Structure ----------------
 struct KLine {
     long long time_stamp;   
     std::string symbol;     
@@ -35,7 +33,6 @@ struct KLine {
     long long date_stamp;   
 };
 
-// ---------------- HTTP Request ----------------
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
     ((std::string*)userp)->append((char*)contents, size * nmemb);
     return size * nmemb;
@@ -71,7 +68,6 @@ std::string http_get_with_retry(const std::string& url, int max_retry = 3, int t
     return readBuffer;
 }
 
-// ---------------- BinanceKLineFetcher ----------------
 class BinanceKLineFetcher {
 public:
     BinanceKLineFetcher() {
@@ -143,7 +139,6 @@ private:
     }
 };
 
-// ---------------- ClickHouse Storage ----------------
 class ClickHouseStorage {
 public:
     ClickHouseStorage(const json& config) {
@@ -214,9 +209,7 @@ private:
     std::string table_name;
 };
 
-// ---------------- Main ----------------
 int main() {
-    // 1. Load Config
     std::ifstream f("config.json");
     if (!f.is_open()) {
         std::cerr << "Could not open config.json" << std::endl;
@@ -224,11 +217,9 @@ int main() {
     }
     json config = json::parse(f);
 
-    // 2. Setup Fetcher and Storage
     BinanceKLineFetcher fetcher;
     ClickHouseStorage storage(config["clickhouse"]);
 
-    // Example range: Jan 1 2024 to Jan 2 2024
     long long start_time = 1704067200; 
     long long end_time   = 1704153600;
 
