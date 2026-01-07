@@ -4,7 +4,7 @@
     "database": "quant",
     "user": "quant",
     "password": "quant",
-    "table": "binance_trades_ticks"
+    "table": "binance_trades_tick"
   }
 }
 
