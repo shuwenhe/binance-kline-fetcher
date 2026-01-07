@@ -1,4 +1,4 @@
-CREATE TABLE quant.okx_trades_tick
+CREATE TABLE quant.binance_trades_tick
 (
     `inst_id` String,
     `timestamp` UInt64,
